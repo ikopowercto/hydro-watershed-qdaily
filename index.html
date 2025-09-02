@@ -1,298 +1,97 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Débits journaliers estimés par bassin versant (GitHub Pages)</title>
-  <link rel="preconnect" href="https://unpkg.com" />
+  <meta charset="UTF-8">
+  <title>Hydro Débits - Bassin Versant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    :root { --bg:#0b1020; --fg:#f5f7fb; --muted:#9aa3b2; --accent:#6ee7b7; --accent2:#93c5fd; }
-    * { box-sizing: border-box }
-    body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial}
-    header{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #1f2742;background:#0e1430;position:sticky;top:0;z-index:1000}
-    header h1{font-size:18px;margin:0;font-weight:700}
-    #app{display:grid;grid-template-columns: 400px 1fr;min-height:calc(100vh - 58px)}
-    #sidebar{padding:12px;border-right:1px solid #1f2742;background:#0e1430;overflow:auto}
-    #map{width:100%;height:calc(100vh - 58px)}
-    fieldset{border:1px solid #24304f;border-radius:14px;padding:10px 12px;margin:0 0 12px 0}
-    legend{color:var(--muted);padding:0 6px}
-    label{display:block;margin:6px 0 2px;color:#c9d2e3}
-    input, select, button{width:100%;padding:10px;border-radius:12px;border:1px solid #2a3558;background:#10183a;color:var(--fg)}
-    button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b1020;font-weight:700;border:none}
-    button{cursor:pointer}
-    .inline{display:flex;gap:8px}
-    .inline > *{flex:1}
-    .hint{color:var(--muted);font-size:12px}
-    .pill{display:inline-block;border:1px solid #2a3558;border-radius:999px;padding:4px 8px;margin-right:6px;font-size:12px;color:#cdd6ea}
-    .stat{display:grid;grid-template-columns:1fr auto;gap:6px;padding:8px 10px;background:#0b1536;border:1px solid #1e2a4e;border-radius:12px;margin:6px 0}
-    a{color:#90dbff}
-    .footer{font-size:12px;color:var(--muted);margin-top:8px}
-    .loading{animation:pulse 1.2s infinite ease-in-out}
-    @keyframes pulse{0%{opacity:0.55}50%{opacity:1}100%{opacity:0.55}}
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    #map { height: 500px; }
+    #controls { padding: 1em; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>💧 Débits journaliers estimés par bassin versant</h1>
-    <div>
-      <span class="pill">Delineator API (MERIT‑Hydro)</span>
-      <span class="pill">Open‑Meteo (pluviométrie)</span>
-    </div>
-  </header>
-  <div id="app">
-    <aside id="sidebar">
-      <fieldset>
-        <legend>1) Point d'étude</legend>
-        <div class="hint">Cliquez sur la carte pour choisir l'exutoire (près d'un cours d'eau). Ou saisissez des coordonnées.</div>
-        <label>Latitude / Longitude</label>
-        <div class="inline">
-          <input id="lat" type="number" step="any" placeholder="lat" />
-          <input id="lng" type="number" step="any" placeholder="lng" />
-        </div>
-        <div class="inline" style="margin-top:8px">
-          <select id="precision">
-            <option value="high" selected>Précision: élevée</option>
-            <option value="low">Précision: basse</option>
-          </select>
-          <select id="smooth">
-            <option value="none" selected>Contours: bruts</option>
-            <option value="beautify">Contours: lissés</option>
-            <option value="simplify">Contours: simplifiés</option>
-          </select>
-        </div>
-        <button id="btnDelineate" class="primary" style="margin-top:10px">⚙️ Délimiter le bassin versant</button>
-        <div id="wsStats"></div>
-      </fieldset>
-
-      <fieldset>
-        <legend>2) Période & paramètres pluie‑débit</legend>
-        <label>Début / Fin</label>
-        <div class="inline">
-          <input id="start" type="date" />
-          <input id="end" type="date" />
-        </div>
-        <label>Coefficient de ruissellement C (0–1)</label>
-        <input id="coefC" type="number" min="0" max="1" step="0.05" value="0.30" />
-        <label>Débit de base (m³/s)</label>
-        <input id="baseflow" type="number" step="0.1" value="0" />
-        <label>Points d'échantillonnage pluie (dans le bassin)</label>
-        <input id="nSamples" type="number" min="1" max="15" step="1" value="5" />
-        <div class="hint">On moyenne la pluie quotidienne (mm) sur N points pris aléatoirement dans le polygone.</div>
-        <button id="btnCompute" class="primary" style="margin-top:10px">📈 Calculer les débits journaliers</button>
-        <button id="btnDownload" style="margin-top:8px" disabled>⬇️ Télécharger CSV</button>
-        <div id="runMsg" class="hint"></div>
-      </fieldset>
-
-      <fieldset>
-        <legend>3) Résumé</legend>
-        <div id="summary"></div>
-      </fieldset>
-
-      <div class="footer">
-        <p>⚠️ Estimations simplifiées basées sur C × pluie × surface (sans routage avancé). Vérifiez vos résultats avec des données in‑situ si disponibles.</p>
-        <p>Crédits : <a href="https://mghydro.com/watersheds/" target="_blank">Global Watersheds</a> (delineation) & <a href="https://open-meteo.com/" target="_blank">Open‑Meteo</a> (pluie). Code sous licence MIT.</p>
-      </div>
-    </aside>
-
-    <div id="map"></div>
+  <h1 style="text-align:center">Hydro Débits - Simulation</h1>
+  <div id="map"></div>
+  <div id="controls">
+    <label>Coefficient de ruissellement (C): <input type="number" id="coef" value="0.5" step="0.05" min="0" max="1"></label><br>
+    <label>Fraction souterraine (k): <input type="number" id="kfrac" value="0.2" step="0.05" min="0" max="1"></label><br>
+    <button onclick="calculerDebits()">Calculer Débits Journaliers</button>
+    <pre id="output"></pre>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
-    // --- Carte Leaflet ---
-    const map = L.map('map', { zoomControl: true }).setView([46.5, 2.5], 6);
+    let map = L.map('map').setView([46.5, 2.5], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18, attribution: '&copy; OpenStreetMap'
+      maxZoom: 18,
     }).addTo(map);
 
-    let outletMarker = null;
-    let wsLayer = null;
-    let riversLayer = null;
-    let watershed = null; // GeoJSON Feature (Polygon)
+    let outletMarker;
+    let outletCoords;
 
-    const latEl = document.getElementById('lat');
-    const lngEl = document.getElementById('lng');
-
-    map.on('click', (e) => {
-      const { lat, lng } = e.latlng;
-      latEl.value = lat.toFixed(6);
-      lngEl.value = lng.toFixed(6);
-      setOutlet(lat, lng);
+    map.on('click', function(e) {
+      if (outletMarker) map.removeLayer(outletMarker);
+      outletCoords = e.latlng;
+      outletMarker = L.marker(outletCoords).addTo(map).bindPopup("Exutoire").openPopup();
     });
 
-    function setOutlet(lat, lng){
-      if(outletMarker) map.removeLayer(outletMarker);
-      outletMarker = L.marker([lat, lng], { draggable:true }).addTo(map);
-      outletMarker.on('dragend', (ev)=>{
-        const p = ev.target.getLatLng();
-        latEl.value = p.lat.toFixed(6); lngEl.value = p.lng.toFixed(6);
-      });
+    async function fetchWorldClim(month, lat, lng, res='10m') {
+      const url = `https://biogeo.ucdavis.edu/data/worldclim/v2.1/base/wc2.1_${res}_prec_${month}.tif`;
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      const georaster = await parseGeoraster(arrayBuffer);
+      let pixelValue = georaster.values[0][Math.floor(georaster.height/2)][Math.floor(georaster.width/2)];
+      return pixelValue; // mm/mois
     }
 
-    // --- Appels API mghydro (GeoJSON) ---
-    async function delineate(){
-      const lat = parseFloat(latEl.value), lng = parseFloat(lngEl.value);
-      if(Number.isNaN(lat) || Number.isNaN(lng)){
-        alert('Cliquez sur la carte ou saisissez des coordonnées.');
+    async function calculerDebits() {
+      if (!outletCoords) {
+        alert("Cliquez sur la carte pour définir l’exutoire.");
         return;
       }
-      const precision = document.getElementById('precision').value;
-      const smooth = document.getElementById('smooth').value;
-      const simplify = smooth === 'simplify';
-      const beautify = smooth === 'beautify';
+      const C = parseFloat(document.getElementById('coef').value);
+      const k = parseFloat(document.getElementById('kfrac').value);
 
-      const params = new URLSearchParams({ lat, lng, precision, simplify, beautify });
-      const wsUrl = `https://mghydro.com/app/watershed_api?${params.toString()}`;
-      const riversUrl = `https://mghydro.com/app/upstream_rivers_api?${params.toString()}`;
+      // Surface bassin fixe pour la démo (à remplacer par calcul bassin versant)
+      const A_km2 = 100;
+      const A_m2 = A_km2 * 1e6;
 
-      setStatus('#wsStats', 'Délimitation en cours…', true);
-      try{
-        const [wsRes, rvRes] = await Promise.all([
-          fetch(wsUrl), fetch(riversUrl)
-        ]);
-        if(!wsRes.ok) throw new Error('Erreur WS ' + wsRes.status);
-        const wsGeo = await wsRes.json();
-        const rvGeo = rvRes.ok ? await rvRes.json() : null;
-        watershed = wsGeo.features[0];
-        drawWatershed(wsGeo, rvGeo);
-        const area = watershed.properties?.area_km2 ? Number(watershed.properties.area_km2) : turf.area(watershed)/1e6;
-        const bbox = turf.bbox(wsGeo);
-        setStatus('#wsStats', `<div class="stat"><div>Surface</div><div><b>${area.toLocaleString('fr-FR',{maximumFractionDigits:0})}</b> km²</div></div>
-          <div class="stat"><div>Emprise (bbox)</div><div>${bbox.map(n=>n.toFixed(3)).join(', ')}</div></div>`);
-        fitTo(wsGeo);
-      }catch(err){
-        console.error(err);
-        setStatus('#wsStats', 'Impossible de délimiter le bassin. Essayez de cliquer plus près d’un cours d’eau.', false);
+      let dailyP = [];
+      let totalP = 0;
+
+      for (let m = 1; m <= 12; m++) {
+        const P_month = await fetchWorldClim(m, outletCoords.lat, outletCoords.lng);
+        totalP += P_month;
+        const daysInMonth = new Date(2000, m, 0).getDate();
+        const P_day = P_month / daysInMonth;
+        for (let d = 0; d < daysInMonth; d++) {
+          dailyP.push(P_day);
+        }
       }
-    }
 
-    function drawWatershed(wsGeo, rvGeo){
-      if(wsLayer) map.removeLayer(wsLayer);
-      if(riversLayer) map.removeLayer(riversLayer);
-      wsLayer = L.geoJSON(wsGeo, {style:{color:'#6ee7b7', weight:2, fillOpacity:0.15}}).addTo(map);
-      if(rvGeo){
-        riversLayer = L.geoJSON(rvGeo, {style:{color:'#93c5fd', weight:1}}).addTo(map);
-      }
-    }
-    function fitTo(geo){ map.fitBounds(L.geoJSON(geo).getBounds(), {padding:[20,20]}); }
+      // Débit annuel moyen à partir des pluies
+      let Vann = (totalP / 1000) * A_m2; // m3/an
+      let Qann = Vann / (365 * 86400); // m3/s
+      let Qb = k * Qann; // débit de base automatique
 
-    function setStatus(sel, html, loading=false){
-      const el = document.querySelector(sel);
-      el.innerHTML = html;
-      el.className = loading ? 'loading' : '';
-    }
-
-    document.getElementById('btnDelineate').addEventListener('click', delineate);
-
-    // --- Calcul pluie -> débit ---
-    document.getElementById('btnCompute').addEventListener('click', async () => {
-      if(!watershed){ alert('Délimitez d’abord un bassin versant.'); return; }
-      const start = document.getElementById('start').value;
-      const end = document.getElementById('end').value;
-      const C = Number(document.getElementById('coefC').value || 0.3);
-      const Qb = Number(document.getElementById('baseflow').value || 0);
-      const n = Math.max(1, Math.min(15, Number(document.getElementById('nSamples').value || 5)));
-      if(!start || !end){ alert('Choisissez les dates de début et fin.'); return; }
-
-      const area_km2 = watershed.properties?.area_km2 ? Number(watershed.properties.area_km2) : turf.area(watershed)/1e6;
-      const poly = watershed;
-
-      setStatus('#runMsg', 'Récupération des pluies Open‑Meteo…', true);
-
-      // échantillonne n points à l’intérieur du polygone
-      const samples = samplePointsInPolygon(poly, n);
-      const dailySeries = await fetchOpenMeteoDaily(samples, start, end);
-      if(!dailySeries){ setStatus('#runMsg', 'Impossible d’obtenir les pluies.', false); return; }
-
-      // moyenne spatiale par jour
-      const days = dailySeries[0].time;
-      const precipByDay = days.map((_, i)=> avg(dailySeries.map(s => s.precipitation_sum[i])) );
-
-      // conversion pluie (mm) -> débit moyen journalier (m3/s)
-      const A_m2 = area_km2 * 1e6;
-      const results = days.map((d, i) => {
-        const P_mm = precipByDay[i] || 0;
-        const V_m3 = C * (P_mm/1000) * A_m2; // volume journalier ruisselé
-        const Q_ms = (V_m3 / 86400) + Qb; // débit moyen journalier m3/s
-        return { date: d, precip_mm: round(P_mm,2), discharge_m3s: round(Q_ms,3) };
+      let output = `Surface bassin: ${A_km2} km²\n\nDébits journaliers estimés (m3/s):\n`;
+      dailyP.forEach((P_day, idx) => {
+        let Q = C * (P_day/1000) * A_m2 / 86400 + Qb;
+        output += `Jour ${idx+1}: ${Q.toFixed(3)}\n`;
       });
-
-      // stats rapides
-      const meanQ = avg(results.map(r=>r.discharge_m3s));
-      const maxQ = Math.max(...results.map(r=>r.discharge_m3s));
-      const totalP = results.reduce((s,r)=>s+(r.precip_mm||0),0);
-      document.getElementById('summary').innerHTML = `
-        <div class="stat"><div>Pluie cumulée</div><div><b>${round(totalP,1)}</b> mm</div></div>
-        <div class="stat"><div>Q moyen</div><div><b>${round(meanQ,2)}</b> m³/s</div></div>
-        <div class="stat"><div>Q max</div><div><b>${round(maxQ,2)}</b> m³/s</div></div>
-      `;
-
-      // table -> CSV téléchargeable
-      const csv = toCSV(results, ['date','precip_mm','discharge_m3s']);
-      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-      const url = URL.createObjectURL(blob);
-      const dl = document.getElementById('btnDownload');
-      dl.disabled = false;
-      dl.onclick = ()=>{
-        const a = document.createElement('a');
-        a.href = url; a.download = `debits_${new Date().toISOString().slice(0,10)}.csv`;
-        a.click();
-      };
-
-      setStatus('#runMsg', `OK. ${results.length} jours calculés.`, false);
-    });
-
-    function avg(arr){ return arr.reduce((s,v)=>s+(Number(v)||0),0)/arr.length; }
-    function round(x,d){ const p = Math.pow(10,d); return Math.round((x+Number.EPSILON)*p)/p; }
-
-    function samplePointsInPolygon(poly, n){
-      const fc = { type:'FeatureCollection', features:[poly] };
-      const extent = turf.bbox(fc);
-      const pts = [];
-      let guard = 0;
-      while(pts.length < n && guard < n*50){
-        guard++;
-        const p = turf.randomPoint(1, {bbox: extent}).features[0];
-        if(turf.booleanPointInPolygon(p, poly)){
-          pts.push(p);
-        }
-      }
-      return pts.map(f=>f.geometry.coordinates.reverse()); // -> [lat,lng]
+      document.getElementById('output').textContent = output;
     }
 
-    async function fetchOpenMeteoDaily(points, start, end){
-      // On boucle sur quelques points, puis on merge en mémoire
-      try{
-        const series = [];
-        for(const [lat, lng] of points){
-          const url = new URL('https://archive-api.open-meteo.com/v1/archive');
-          url.search = new URLSearchParams({
-            latitude: lat, longitude: lng,
-            start_date: start, end_date: end,
-            daily: 'precipitation_sum', timezone: 'auto'
-          }).toString();
-          const res = await fetch(url);
-          if(!res.ok){ console.warn('Open‑Meteo error', res.status); return null; }
-          const j = await res.json();
-          series.push({ time: j.daily.time, precipitation_sum: j.daily.precipitation_sum });
-        }
-        // Harmonise longueur (au cas où Open‑Meteo tronque la dernière journée)
-        const minLen = Math.min(...series.map(s=>s.time.length));
-        series.forEach(s=>{ s.time = s.time.slice(0,minLen); s.precipitation_sum = s.precipitation_sum.slice(0,minLen); });
-        return series;
-      }catch(err){ console.error(err); return null; }
+    // Import GeoRaster (nécessaire pour WorldClim)
+    async function parseGeoraster(arrayBuffer) {
+      return new Promise((resolve, reject) => {
+        parseGeoraster(arrayBuffer).then(resolve).catch(reject);
+      });
     }
-
-    // Valeurs par défaut
-    (function init(){
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const start = new Date(yyyy-1, 0, 1); // 1 janv dernier
-      document.getElementById('start').value = start.toISOString().slice(0,10);
-      document.getElementById('end').value = today.toISOString().slice(0,10);
-    })();
   </script>
+  <script src="https://unpkg.com/georaster"></script>
+  <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
 </body>
 </html>

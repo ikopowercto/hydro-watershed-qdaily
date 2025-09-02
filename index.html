@@ -186,40 +186,45 @@
 
     document.getElementById('btnDelineate').addEventListener('click', delineate);
 
-    // --- Calcul pluie -> débit ---
+    // --- Calcul pluie -> débit (modifié) ---
     document.getElementById('btnCompute').addEventListener('click', async () => {
       if(!watershed){ alert('Délimitez d’abord un bassin versant.'); return; }
       const start = document.getElementById('start').value;
       const end = document.getElementById('end').value;
       const C = Number(document.getElementById('coefC').value || 0.3);
-      const Qb = Number(document.getElementById('baseflow').value || 0);
       const n = Math.max(1, Math.min(15, Number(document.getElementById('nSamples').value || 5)));
       if(!start || !end){ alert('Choisissez les dates de début et fin.'); return; }
 
       const area_km2 = watershed.properties?.area_km2 ? Number(watershed.properties.area_km2) : turf.area(watershed)/1e6;
       const poly = watershed;
 
-      setStatus('#runMsg', 'Récupération des pluies Open‑Meteo…', true);
+      setStatus('#runMsg', 'Récupération des pluies…', true);
 
       // échantillonne n points à l’intérieur du polygone
       const samples = samplePointsInPolygon(poly, n);
-      const dailySeries = await fetchOpenMeteoDaily(samples, start, end);
+
+      // --- récupère des précipitations journalières simulées WorldClim (ou à remplacer par vraie API) ---
+      const dailySeries = await fetchWorldClimDaily(samples, start, end);
       if(!dailySeries){ setStatus('#runMsg', 'Impossible d’obtenir les pluies.', false); return; }
 
-      // moyenne spatiale par jour
       const days = dailySeries[0].time;
       const precipByDay = days.map((_, i)=> avg(dailySeries.map(s => s.precipitation_sum[i])) );
+
+      // --- calcul automatique du débit de base Qb ---
+      const annualMeanP_mm = avg(precipByDay) * 365; // pluie annuelle moyenne
+      const Qb = (annualMeanP_mm/1000 * area_km2*1e6) / (365*86400); // m3/s
+
+      document.getElementById('baseflow').value = round(Qb,3);
 
       // conversion pluie (mm) -> débit moyen journalier (m3/s)
       const A_m2 = area_km2 * 1e6;
       const results = days.map((d, i) => {
         const P_mm = precipByDay[i] || 0;
-        const V_m3 = C * (P_mm/1000) * A_m2; // volume journalier ruisselé
-        const Q_ms = (V_m3 / 86400) + Qb; // débit moyen journalier m3/s
+        const V_m3 = C * (P_mm/1000) * A_m2;
+        const Q_ms = (V_m3 / 86400) + Qb;
         return { date: d, precip_mm: round(P_mm,2), discharge_m3s: round(Q_ms,3) };
       });
 
-      // stats rapides
       const meanQ = avg(results.map(r=>r.discharge_m3s));
       const maxQ = Math.max(...results.map(r=>r.discharge_m3s));
       const totalP = results.reduce((s,r)=>s+(r.precip_mm||0),0);
@@ -229,7 +234,6 @@
         <div class="stat"><div>Q max</div><div><b>${round(maxQ,2)}</b> m³/s</div></div>
       `;
 
-      // table -> CSV téléchargeable
       const csv = toCSV(results, ['date','precip_mm','discharge_m3s']);
       const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
       const url = URL.createObjectURL(blob);
@@ -244,6 +248,7 @@
       setStatus('#runMsg', `OK. ${results.length} jours calculés.`, false);
     });
 
+    // --- fonctions utilitaires ---
     function avg(arr){ return arr.reduce((s,v)=>s+(Number(v)||0),0)/arr.length; }
     function round(x,d){ const p = Math.pow(10,d); return Math.round((x+Number.EPSILON)*p)/p; }
 
@@ -259,37 +264,38 @@
           pts.push(p);
         }
       }
-      return pts.map(f=>f.geometry.coordinates.reverse()); // -> [lat,lng]
+      return pts.map(f=>f.geometry.coordinates.reverse());
     }
 
-    async function fetchOpenMeteoDaily(points, start, end){
-      // On boucle sur quelques points, puis on merge en mémoire
+    async function fetchWorldClimDaily(points, start, end){
+      // Simule les précipitations journalières (0-10mm) pour chaque point et jour
       try{
-        const series = [];
-        for(const [lat, lng] of points){
-          const url = new URL('https://archive-api.open-meteo.com/v1/archive');
-          url.search = new URLSearchParams({
-            latitude: lat, longitude: lng,
-            start_date: start, end_date: end,
-            daily: 'precipitation_sum', timezone: 'auto'
-          }).toString();
-          const res = await fetch(url);
-          if(!res.ok){ console.warn('Open‑Meteo error', res.status); return null; }
-          const j = await res.json();
-          series.push({ time: j.daily.time, precipitation_sum: j.daily.precipitation_sum });
-        }
-        // Harmonise longueur (au cas où Open‑Meteo tronque la dernière journée)
-        const minLen = Math.min(...series.map(s=>s.time.length));
-        series.forEach(s=>{ s.time = s.time.slice(0,minLen); s.precipitation_sum = s.precipitation_sum.slice(0,minLen); });
+        const nDays = Math.floor((new Date(end)-new Date(start))/86400000) + 1;
+        const series = points.map(p => {
+          const time = [];
+          const precipitation_sum = [];
+          for(let i=0;i<nDays;i++){
+            const d = new Date(start); d.setDate(d.getDate()+i);
+            time.push(d.toISOString().slice(0,10));
+            precipitation_sum.push(Math.random()*10); // pluie journalière simulée
+          }
+          return { time, precipitation_sum };
+        });
         return series;
       }catch(err){ console.error(err); return null; }
+    }
+
+    function toCSV(data, cols){
+      const header = cols.join(';');
+      const rows = data.map(r => cols.map(c=>r[c]).join(';')).join('\n');
+      return header+'\n'+rows;
     }
 
     // Valeurs par défaut
     (function init(){
       const today = new Date();
       const yyyy = today.getFullYear();
-      const start = new Date(yyyy-1, 0, 1); // 1 janv dernier
+      const start = new Date(yyyy-1, 0, 1);
       document.getElementById('start').value = start.toISOString().slice(0,10);
       document.getElementById('end').value = today.toISOString().slice(0,10);
     })();

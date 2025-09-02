@@ -185,7 +185,7 @@ function updateMarkerFromInputs() {
     function drawWatershed(wsGeo, rvGeo){
       if(wsLayer) map.removeLayer(wsLayer);
       if(riversLayer) map.removeLayer(riversLayer);
-      wsLayer = L.geoJSON(wsGeo, {style:{color:'#6ee7b7', weight:2, fillOpacity:0.15}}).addTo(map);
+      wsLayer = L.geoJSON(wsGeo, {style:{color:'#ffa500', weight:2, fillOpacity:0.15}}).addTo(map);
       if(rvGeo){
         riversLayer = L.geoJSON(rvGeo, {style:{color:'#93c5fd', weight:1}}).addTo(map);
       }

@@ -69,11 +69,8 @@ Q_i = \frac{V_i}{86400} + Q_b
 - \(86400\) : nombre de secondes dans une journée  
 - \(Q_b\) : débit de base (m³/s)
 
----
+## 2.1 Schéma simplifié du calcul
 
-### 2.1 Schéma simplifié du calcul
-
-```text
       Pluie quotidienne P_i (mm)
                  │
                  ▼
@@ -85,7 +82,9 @@ Q_i = \frac{V_i}{86400} + Q_b
                  ▼
   Débit moyen journalier Q_i = V_i / 86400 + Qb (m³/s)
 
-3. Sources des données
+--------------------------------------
+
+## 3. Sources des données
 
 Délimitation du bassin versant :
 
@@ -99,7 +98,7 @@ Open-Meteo Archive API
 
 Précipitations journalières historiques pour un point donné (latitude, longitude).
 
-4. Notes importantes
+## 4. Notes importantes
 
 Les estimations sont simplifiées, basées sur le produit 
 
@@ -109,6 +108,7 @@ Vérifiez vos résultats avec des données de terrain ou des stations hydrométr
 
 Les calculs ne prennent pas en compte les pertes d’infiltration, stockage temporaire ou retenues naturelles.
 
-5. Licence
+## 5. Licence
 
 Code sous licence MIT.
+
